@@ -11,7 +11,7 @@ load_dotenv()
 # Email credentials
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
-IMAP_SERVER = "imap.gmail.com"  
+IMAP_SERVER = "imap.gmail.com"
 
 # Define marketing keywords
 MARKETING_KEYWORDS = [
@@ -21,16 +21,20 @@ MARKETING_KEYWORDS = [
 ]
 
 # Determine if an email is marketing based on subject and sender.
+
+
 def is_marketing_email(subject, sender, content):
     combined_text = f"{subject.lower()} {sender.lower()} {content.lower()}"
     return any(keyword in combined_text for keyword in MARKETING_KEYWORDS)\
 
+
+
 def decode_subject(subject):
     if subject is None:
         return "(No Subject)"
-    
+
     decoded_parts = decode_header(subject)
-    
+
     # Process each part (some emails have multiple encoded parts)
     decoded_subject = []
     for part, encoding in decoded_parts:
@@ -41,6 +45,7 @@ def decode_subject(subject):
 
     return "".join(decoded_subject)
 
+
 def fetch_marketing_emails():
     # Connect to email server
     mail = imaplib.IMAP4_SSL(IMAP_SERVER)
@@ -48,11 +53,12 @@ def fetch_marketing_emails():
     mail.select("inbox")
 
     # Search for marketing emails (customize this filter)
-    result, data = mail.search(None, 'ALL')  # Change to 'UNSEEN' for new emails only
+    # Change to 'UNSEEN' for new emails only
+    result, data = mail.search(None, 'ALL')
     email_ids = data[0].split()[::-1]
 
     summaries = []
-    
+
     for email_id in email_ids[:10]:  # Limit to 10 for performance
         result, msg_data = mail.fetch(email_id, "(RFC822)")
         for response_part in msg_data:
@@ -60,23 +66,30 @@ def fetch_marketing_emails():
                 msg = email.message_from_bytes(response_part[1])
                 subject = decode_subject(msg["subject"])
                 sender = msg["from"]
-                
+
                 # Extract email content
                 if msg.is_multipart():
                     for part in msg.walk():
                         if part.get_content_type() == "text/html":
-                            html_content = part.get_payload(decode=True).decode("utf-8")
-                            text_content = BeautifulSoup(html_content, "html.parser").get_text()
+                            html_content = part.get_payload(
+                                decode=True).decode("utf-8")
+                            text_content = BeautifulSoup(
+                                html_content, "html.parser").get_text()
                             break
                 else:
                     text_content = msg.get_payload(decode=True).decode("utf-8")
-                
+
                 # Check if it's a marketing email
                 if not is_marketing_email(subject, sender, text_content):
                     continue  # Skip non-marketing emails
+                # Define the context as a system message
+                messages = [
+                    {"role": "system", "content": "You are reviewing marketing emails and your purpose is to explain the email."},
+                    {"role": "user", "content": f"Create a brief explanation of the email contents, no more than 3 lines:\n{text_content}"}
+                ]
 
                 # Summarize with Ollama
-                response = ollama.chat(model="mistral", messages=[{"role": "user", "content": f"Create a brief summary of the email contents:\n{text_content}"}])
+                response = ollama.chat(model="mistral", messages=messages)
                 summary = response["message"]["content"]
 
                 summaries.append(f"📩 **{subject}** from {sender}\n{summary}\n")
@@ -84,8 +97,7 @@ def fetch_marketing_emails():
     mail.logout()
     return "\n".join(summaries)
 
+
 # Run the script
 if __name__ == "__main__":
     print(fetch_marketing_emails())
-
-
